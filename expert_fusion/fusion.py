@@ -4,8 +4,8 @@ from collections import defaultdict
 
 import jsonlines
 import numpy as np
-from sklearn.metrics import (accuracy_score, f1_score, precision_score,
-                             recall_score)
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+import tabulate
 
 
 def load_weights(weights_file):
@@ -128,7 +128,7 @@ def get_oracle_prediction(dataset_name, logits):
 
 def main():
     dataset_name = "mustard"
-    model_name = "albef"
+    model_name = "qwen-7b"
 
     with open(
         f"../{dataset_name}_data/data_split_output/{dataset_name}_AS_dataset_test_cogvlm2_qwen2.json",
@@ -159,19 +159,21 @@ def main():
     results = load_and_transform_data(dataset_name, file_dir, subset_names, weights)
 
     baseline_results = load_and_transform_data(dataset_name, file_dir, ["baseline"], {})
+    results_log = {}
 
-    print(
-        "Baseline Interaction Type Accuracy:",
+    results_log["Baseline Interaction Type Accuracy"] = (
         get_predictions(baseline_results, lambda x, y: np.argmax(x["baseline"])),
     )
 
     if weights:
-        print("RUS Fusion:", get_predictions(results, weighted_softmax_rus_fusion))
+        results_log["RUS Fusion"] = get_predictions(
+            results, weighted_softmax_rus_fusion
+        )
 
-    print("Oracle Prediction:", get_oracle_prediction(dataset_name, results))
-    print("Simple Average Fusion:", get_predictions(results, simple_average))
-    print("Max Fusion:", get_predictions(results, max_fusion))
-    print("Softmax Fusion:", get_predictions(results, softmax_fusion))
+    results_log["Oracle Prediction"] = get_oracle_prediction(dataset_name, results)
+    results_log["Simple Average Fusion"] = get_predictions(results, simple_average)
+    results_log["Max Fusion"] = get_predictions(results, max_fusion)
+    results_log["Softmax Fusion"] = get_predictions(results, softmax_fusion)
 
     subpart_results = {"AS": {}, "R": {}, "U": {}}
     subpart_baseline_results = {"AS": {}, "R": {}, "U": {}}
@@ -187,25 +189,55 @@ def main():
             subpart_baseline_results["U"][result] = baseline_results[result]
 
     for interaction_type in subset_names:
-        print(
-            f"{interaction_type} expert results on the {interaction_type} test set:",
+        results_log[
+            f"{interaction_type} expert results on the {interaction_type} test set"
+        ] = (
             get_predictions(
                 subpart_results[interaction_type],
                 lambda x, y: np.argmax(x[interaction_type]),
             ),
         )
-        print(
-            f"Baseline results on the {interaction_type} test set:",
+
+        results_log[f"Baseline results on the {interaction_type} test set"] = (
             get_predictions(
                 subpart_baseline_results[interaction_type],
                 lambda x, y: np.argmax(x["baseline"]),
             ),
         )
-        print(
-            f"{interaction_type} expert results on the whole test set:",
-            get_predictions(results, lambda x, y: np.argmax(x[interaction_type])),
+
+        results_log[f"{interaction_type} expert results on the whole test set"] = (
+            get_predictions(results, lambda x, y: np.argmax(x[interaction_type]))
         )
-        print("=" * 10)
+
+    # Prepare table rows; extract metrics even if they are wrapped in a tuple.
+    table = []
+    for method, metrics in results_log.items():
+        # If metrics is a tuple, take the first element.
+        if isinstance(metrics, tuple):
+            metrics = metrics[0]
+        # Append a row: method, accuracy, f1, precision, recall.
+        table.append(
+            [
+                method,
+                metrics.get("accuracy", None),
+                metrics.get("f1", None),
+                metrics.get("precision", None),
+                metrics.get("recall", None),
+            ]
+        )
+
+    # Define headers for each metric.
+    headers = ["Method", "Accuracy", "F1", "Precision", "Recall"]
+
+    # Print the table in GitHub-flavored markdown style.
+    print(
+        tabulate.tabulate(
+            table,
+            headers=headers,
+            tablefmt="github",
+            floatfmt=".3f",
+        )
+    )
 
 
 if __name__ == "__main__":
