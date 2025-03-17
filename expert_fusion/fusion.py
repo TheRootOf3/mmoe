@@ -6,6 +6,32 @@ import jsonlines
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 import tabulate
+from matplotlib import pyplot as plt
+
+
+def _positive_sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
+def _negative_sigmoid(x):
+    # Cache exp so you won't have to calculate it twice
+    exp = np.exp(x)
+    return exp / (exp + 1)
+
+
+def sigmoid(x):
+    positive = x >= 0
+    # Boolean array inversion is faster than another comparison
+    negative = ~positive
+
+    # empty contains junk hence will be faster to allocate
+    # Zeros has to zero-out the array after allocation, no need for that
+    # See comment to the answer when it comes to dtype
+    result = np.empty_like(x, dtype=np.float16)
+    result[positive] = _positive_sigmoid(x[positive])
+    result[negative] = _negative_sigmoid(x[negative])
+
+    return result
 
 
 def load_weights(weights_file):
@@ -71,8 +97,57 @@ def weighted_softmax_rus_fusion(logits, weights, *args):
     return np.argmax(weighted_logits)
 
 
+def weighted_softmax_temperature_rus_fusion(logits, weights, t, *args):
+    softmax_weights = {
+        "R": np.exp(weights["R"] / t)
+        / (
+            np.exp(weights["R"] / t)
+            + np.exp(weights["U"] / t)
+            + np.exp(weights["AS"] / t)
+        ),
+        "U": np.exp(weights["U"] / t)
+        / (
+            np.exp(weights["R"] / t)
+            + np.exp(weights["U"] / t)
+            + np.exp(weights["AS"] / t)
+        ),
+        "AS": np.exp(weights["AS"] / t)
+        / (
+            np.exp(weights["R"] / t)
+            + np.exp(weights["U"] / t)
+            + np.exp(weights["AS"] / t)
+        ),
+    }
+    softmax_weights_control = {
+        "R": np.exp(weights["R"])
+        / (np.exp(weights["R"]) + np.exp(weights["U"]) + np.exp(weights["AS"])),
+        "U": np.exp(weights["U"])
+        / (np.exp(weights["R"]) + np.exp(weights["U"]) + np.exp(weights["AS"])),
+        "AS": np.exp(weights["AS"])
+        / (np.exp(weights["R"]) + np.exp(weights["U"]) + np.exp(weights["AS"])),
+    }
+
+    softmax_logits = {
+        name: np.exp(logit) / np.sum(np.exp(logit)) for name, logit in logits.items()
+    }
+    weighted_logits = sum(
+        softmax_weights[name] * np.array(logit)
+        for name, logit in softmax_logits.items()
+    )
+    return np.argmax(weighted_logits)
+
+
 def simple_average(logits, *args):
     avg_logits = np.mean([logits[name] for name in logits], axis=0)
+    return np.argmax(avg_logits)
+
+
+def simple_average_sigmoid(logits, *args):
+    avg_logits = np.mean([sigmoid(np.array(logits[name])) for name in logits], axis=0)
+    # avg_logits_normal = np.mean([logits[name] for name in logits], axis=0)
+    # print([sigmoid(np.array(logits[name])) for name in logits])
+    # print([logits[name] for name in logits])
+    # print(avg_logits, avg_logits_normal)
     return np.argmax(avg_logits)
 
 
@@ -169,9 +244,37 @@ def main():
         results_log["RUS Fusion"] = get_predictions(
             results, weighted_softmax_rus_fusion
         )
+    #     results_log["RUS Fusion t=1e-1"] = get_predictions(
+    #         results, lambda x, y: weighted_softmax_temperature_rus_fusion(x, y, 1e-1)
+    #     )
+    #     # results_log["RUS Fusion t=100"] = get_predictions(
+    #     #     results, lambda x, y: weighted_softmax_temperature_rus_fusion(x, y, 100)
+    #     # )
+
+    # tmp_res = {}
+    # temps_exponents = list(range(1, 21))
+    # for temp_exp in temps_exponents:
+    #     tmp_res[f"temp={temp_exp / temps_exponents[-1]}"] = get_predictions(
+    #         results,
+    #         lambda x, y: weighted_softmax_temperature_rus_fusion(
+    #             x, y, temp_exp / temps_exponents[-1]
+    #         ),
+    #     )
+
+    # plt.plot(
+    #     [x / temps_exponents[-1] for x in temps_exponents],
+    #     [res["accuracy"] for res in tmp_res.values()],
+    #     "-o",
+    # )
+    # plt.axhline(results_log["RUS Fusion"]["accuracy"], color="r", linestyle="--")
+    # plt.grid(alpha=0.6, zorder=1)
+    # plt.show()
 
     results_log["Oracle Prediction"] = get_oracle_prediction(dataset_name, results)
     results_log["Simple Average Fusion"] = get_predictions(results, simple_average)
+    results_log["Simple Average Sigmoid Fusion"] = get_predictions(
+        results, simple_average_sigmoid
+    )
     results_log["Max Fusion"] = get_predictions(results, max_fusion)
     results_log["Softmax Fusion"] = get_predictions(results, softmax_fusion)
 
@@ -219,10 +322,10 @@ def main():
         table.append(
             [
                 method,
-                metrics.get("accuracy", None),
-                metrics.get("f1", None),
-                metrics.get("precision", None),
-                metrics.get("recall", None),
+                100 * metrics.get("accuracy", None),
+                100 * metrics.get("f1", None),
+                100 * metrics.get("precision", None),
+                100 * metrics.get("recall", None),
             ]
         )
 
@@ -235,7 +338,7 @@ def main():
             table,
             headers=headers,
             tablefmt="github",
-            floatfmt=".3f",
+            floatfmt=".2f",
         )
     )
 
