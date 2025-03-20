@@ -36,7 +36,10 @@ class FunnyDataset(Dataset):
         text = item["utterance"]
         id = item["id"]
         context = item["context"]
-        input_json_file = "../urfunny_data/data_gen_output/image_captions_output.json"
+        # input_json_file = "../urfunny_data/data_gen_output/image_captions_output.json"
+        input_json_file = (
+            "../urfunny_data/data_gen_output/urfunny_image_description_cogvlm2.json"
+        )
         # Read the dictionary from the JSON file
         with open(input_json_file, "r") as json_file:
             image_description_dict = json.load(json_file)
