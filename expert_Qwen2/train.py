@@ -296,7 +296,11 @@ if __name__ == "__main__":
         if args.model_size > 1.5
         else f"Qwen/Qwen2-{args.model_size}B"
     )
-    device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        f"cuda:{args.device}"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
     print(device)
 
     if args.dataset == "mustard":

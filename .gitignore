@@ -27,3 +27,12 @@
 **/key_frames/*
 **/subfolder_*/*
 !**/.gitkeep
+
+# data paths
+mmsd_data
+mustard_data
+urfunny_data
+
+# other
+venv
+.DS_Store

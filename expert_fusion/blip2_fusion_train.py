@@ -9,8 +9,7 @@ from peft import LoraConfig, PeftModel, get_peft_model
 from sklearn.metrics import f1_score, precision_score, recall_score
 from torch.nn import functional as F
 from tqdm import tqdm
-from transformers import (AutoProcessor, AutoTokenizer,
-                          Blip2ForConditionalGeneration)
+from transformers import AutoProcessor, AutoTokenizer, Blip2ForConditionalGeneration
 from urfunny import get_urfunny_dataloader
 
 
@@ -178,7 +177,11 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained("Salesforce/blip2-opt-2.7b")
     processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
 
     if args.mode == "train":
         model = Blip2ForConditionalGeneration.from_pretrained(
