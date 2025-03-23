@@ -33,6 +33,14 @@ mmsd_data
 mustard_data
 urfunny_data
 
+# models and caches
+expert_Qwen2/.cache/
+expert_fusion/.cache/
+expert_fusion/mmsd_blip2_fuser/
+expert_fusion/mustard_blip2_fuser/
+expert_fusion/urfunny_blip2_fuser_focal_loss/
+
 # other
 venv
 .DS_Store
+
