@@ -1,16 +1,19 @@
 import argparse
 import json
 
+
 import torch
 import torch.nn as nn
-from mmsd import get_mmsd_dataloader
-from mustard import get_mustard_dataloader
+from torch.nn import functional as F
+import jsonlines
 from peft import LoraConfig, PeftModel, get_peft_model
 from sklearn.metrics import f1_score, precision_score, recall_score
-from torch.nn import functional as F
 from tqdm import tqdm
 from transformers import AutoProcessor, AutoTokenizer, Blip2ForConditionalGeneration
+
 from urfunny import get_urfunny_dataloader
+from mmsd import get_mmsd_dataloader
+from mustard import get_mustard_dataloader
 
 
 class FocalLoss(nn.Module):
@@ -175,8 +178,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    tokenizer = AutoTokenizer.from_pretrained("Salesforce/blip2-opt-2.7b")
-    processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b")
+    tokenizer = AutoTokenizer.from_pretrained(
+        "Salesforce/blip2-opt-2.7b", cache_dir="./.cache"
+    )
+    processor = AutoProcessor.from_pretrained(
+        "Salesforce/blip2-opt-2.7b", cache_dir="./.cache"
+    )
     device = torch.device(
         "cuda"
         if torch.cuda.is_available()
@@ -185,11 +192,15 @@ if __name__ == "__main__":
 
     if args.mode == "train":
         model = Blip2ForConditionalGeneration.from_pretrained(
-            "Salesforce/blip2-opt-2.7b"
+            "Salesforce/blip2-opt-2.7b",
+            cache_dir="./.cache",
         )
         if args.load_from_ckpt:
             model = PeftModel.from_pretrained(
-                model, args.load_from_ckpt, is_trainable=True
+                model,
+                args.load_from_ckpt,
+                is_trainable=True,
+                cache_dir="./.cache",
             )
         else:
             config = LoraConfig(
@@ -229,10 +240,10 @@ if __name__ == "__main__":
 
     elif args.mode == "test":
         model = Blip2ForConditionalGeneration.from_pretrained(
-            "Salesforce/blip2-opt-2.7b"
+            "Salesforce/blip2-opt-2.7b", cache_dir="./.cache"
         )
         model = PeftModel.from_pretrained(
-            model, args.load_model_name, is_trainable=True
+            model, args.load_model_name, is_trainable=True, cache_dir="./.cache"
         ).to(device)
 
         dataloaders = {
@@ -245,9 +256,15 @@ if __name__ == "__main__":
             args, tokenizer, processor, split="test"
         )
         metrics = evaluate(tokenizer, model, test_dataloader, device)
+        rus_logits = [
+            {"image_id": key, "logits": dict(zip(["R", "U", "AS"], value))}
+            for key, value in metrics["rus_logits"].items()
+        ]
 
-        with open(f"./{args.load_model_name}/test_rus_logits.json", "w") as f:
-            json.dump(metrics["rus_logits"], f)
+        with jsonlines.open(
+            f"./{args.load_model_name}/test_rus_logits.jsonl", "w"
+        ) as f:
+            f.write_all(rus_logits)
 
         print(
             f"Test Results - Accuracy: {metrics['accuracy']:.4f}, F1: {metrics['f1']:.4f}, Precision: {metrics['precision']:.4f}, Recall: {metrics['recall']:.4f}"

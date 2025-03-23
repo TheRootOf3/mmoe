@@ -202,8 +202,8 @@ def get_oracle_prediction(dataset_name, logits):
 
 
 def main():
-    dataset_name = "mustard"
-    model_name = "qwen-7b"
+    dataset_name = "urfunny"
+    model_name = "qwen-0.5b"
 
     with open(
         f"../{dataset_name}_data/data_split_output/{dataset_name}_AS_dataset_test_cogvlm2_qwen2.json",
@@ -226,8 +226,10 @@ def main():
         dataset = json.load(f)
     U_test_data_ids = list(dataset.keys())
 
-    file_dir = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}"
-    weights_file = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}/{dataset_name}_rus_logits.jsonl"
+    # file_dir = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}"
+    file_dir = f"../{dataset_name}_data/new_expert_inference_output/expert_{model_name}"
+    # weights_file = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}/{dataset_name}_rus_logits.jsonl"
+    weights_file = "./urfunny_blip2_fuser_focal_loss/test_rus_logits.jsonl"
     subset_names = ["R", "U", "AS"]
 
     weights = load_weights(weights_file) if os.path.exists(weights_file) else None

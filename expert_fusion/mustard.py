@@ -10,12 +10,27 @@ class MustardDataset(Dataset):
     A custom dataset class that prepares image-text pairs for training.
     """
 
-    def __init__(self, image_data_path, tokenizer, image_processor, max_length=512):
-        dataset_dict = {
-            "R": "../mustard_data/data_split_output/mustard_R_dataset_train.json",
-            "U": "../mustard_data/data_split_output/mustard_U_dataset_train.json",
-            "S": "../mustard_data/data_split_output/mustard_AS_dataset_train.json",
-        }
+    def __init__(
+        self, split, image_data_path, tokenizer, image_processor, max_length=512
+    ):
+        if split == "train":
+            dataset_dict = {
+                "R": "../mustard_data/data_split_output/mustard_R_dataset_train_cogvlm2_qwen2_for_fuser.json",
+                "U": "../mustard_data/data_split_output/mustard_U_dataset_train_cogvlm2_qwen2_for_fuser.json",
+                "S": "../mustard_data/data_split_output/mustard_AS_dataset_train_cogvlm2_qwen2_for_fuser.json",
+            }
+        elif split == "val":
+            dataset_dict = {
+                "R": "../mustard_data/data_split_output/mustard_R_dataset_val_cogvlm2_qwen2_for_fuser.json",
+                "U": "../mustard_data/data_split_output/mustard_U_dataset_val_cogvlm2_qwen2_for_fuser.json",
+                "S": "../mustard_data/data_split_output/mustard_AS_dataset_val_cogvlm2_qwen2_for_fuser.json",
+            }
+        elif split == "test":
+            dataset_dict = {
+                "R": "../mustard_data/data_split_output/mustard_R_dataset_test_cogvlm2_qwen2_for_fuser.json",
+                "U": "../mustard_data/data_split_output/mustard_U_dataset_test_cogvlm2_qwen2_for_fuser.json",
+                "S": "../mustard_data/data_split_output/mustard_AS_dataset_test_cogvlm2_qwen2_for_fuser.json",
+            }
         self.dataset = self.load_dataset(dataset_dict)
         self.tokenizer = tokenizer
         self.image_processor = image_processor
@@ -90,7 +105,11 @@ def mustard_collate(batch):
 
 def get_mustard_dataloader(args, tokenizer, image_processor, split):
     dataset = MustardDataset(
-        args.image_data_path, tokenizer, image_processor, args.max_length
+        split,
+        args.image_data_path,
+        tokenizer,
+        image_processor,
+        args.max_length,
     )
     batch_size = args.batch_size if split == "train" else args.val_batch_size
     return DataLoader(
