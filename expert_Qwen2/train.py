@@ -321,14 +321,17 @@ if __name__ == "__main__":
         print("BASELINE", args.load_model_name)
         if args.load_model_name == "none":
             model = AutoModelForCausalLM.from_pretrained(
-                f"Qwen/Qwen2-{int(args.model_size)}B"
-                if args.model_size > 1.5
-                else f"Qwen/Qwen2-{args.model_size}B"
+                (
+                    f"Qwen/Qwen2-{int(args.model_size)}B"
+                    if args.model_size > 1.5
+                    else f"Qwen/Qwen2-{args.model_size}B"
+                ),
+                cache_dir="./.cache",
             )
         else:
-            model = AutoModelForCausalLM.from_pretrained(args.load_model_name).to(
-                device
-            )
+            model = AutoModelForCausalLM.from_pretrained(
+                args.load_model_name, cache_dir="./.cache"
+            ).to(device)
         config = LoraConfig(
             r=args.lora_r,
             lora_alpha=args.lora_alpha,
@@ -363,7 +366,9 @@ if __name__ == "__main__":
     #        model.save_pretrained(args.save_path)
     else:
         print(f"TEST {args.load_model_name}")
-        model = AutoModelForCausalLM.from_pretrained(args.load_model_name).to(device)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.load_model_name, cache_dir="./.cache"
+        ).to(device)
         # model = PeftModel.from_pretrained(
         #    model,
         #    args.load_model_name,

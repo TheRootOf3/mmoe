@@ -31,7 +31,10 @@ class mmsdDataset(Dataset):
         id = item["id"]
         text = item["text"]
         label = torch.tensor(item["label"], dtype=torch.long)
-        input_json_file = ".../mmsd_data/data_gen_output/sarc_image_description.json"
+        # input_json_file = ".../mmsd_data/data_gen_output/sarc_image_description.json"
+        input_json_file = (
+            "../mmsd_data/data_gen_output/mmsd_image_description_cogvlm2.json"
+        )
         # Read the dictionary from the JSON file
         with open(input_json_file, "r") as json_file:
             image_description_dict = json.load(json_file)

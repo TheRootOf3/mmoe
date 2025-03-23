@@ -3,9 +3,9 @@ import os
 
 import jsonlines
 
-dataset_name = "mustard"
+dataset_name = "urfunny"
 model_size = "0.5"
-model_seed = "2"
+model_seed = "32"
 
 inference_results = [
     f"{dataset_name}_baseline_logits.jsonl",
@@ -44,14 +44,14 @@ for inference_result, model_directory in zip(inference_results, model_directorie
 
     # create expert_inference_output expert_blip2 directory if it does not exist
     if not os.path.exists(
-        f"../{dataset_name}_data/expert_inference_output/expert_qwen/{dataset_name}_qwen{model_size}"
+        f"../{dataset_name}_data/new_expert_inference_output/expert_qwen-{model_size}b"
     ):
         os.makedirs(
-            f"../{dataset_name}_data/expert_inference_output/expert_qwen/{dataset_name}_qwen{model_size}"
+            f"../{dataset_name}_data/new_expert_inference_output/expert_qwen-{model_size}b"
         )
 
     with jsonlines.open(
-        f"../{dataset_name}_data/expert_inference_output/expert_qwen/{dataset_name}_qwen{model_size}/{inference_result}",
+        f"../{dataset_name}_data/new_expert_inference_output/expert_qwen-{model_size}b/{inference_result}",
         "w",
     ) as f:
         f.write_all(overall_dataset)
