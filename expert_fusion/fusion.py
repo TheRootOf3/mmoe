@@ -72,7 +72,9 @@ def calculate_metrics(gths, preds):
 def get_predictions(results, fusion_strategy, *args):
     gths, preds = [], []
     for data in results.values():
-        predicted_label = fusion_strategy(data["logits"], data["weights"], *args)
+        predicted_label = fusion_strategy(
+            data["logits"], data["weights"], data["target"], *args
+        )
         gths.append(data["target"])
         preds.append(predicted_label)
     return calculate_metrics(gths, preds)
@@ -168,6 +170,50 @@ def softmax_fusion(logits, *args):
     return np.argmax(softmaxed_probs)
 
 
+def test_confidence_average(logits, weights, target, interaction_type, *args):
+    # print(logits)
+    # print(target)
+    # print(interaction_type)
+    # print([np.exp(logits[name]) / np.sum(np.exp(logits[name])) for name in logits])
+    # time.sleep(1)
+
+    # computing the confidence as the difference between softmax probabilities
+    softmax_outputs_per_expert = np.array(
+        [np.exp(logits[name]) / np.sum(np.exp(logits[name])) for name in logits]
+    )
+    confidence_per_expert = softmax_outputs_per_expert.max(
+        axis=1
+    ) - softmax_outputs_per_expert.min(axis=1)
+
+    softmaxed_confidence_per_expert = np.exp(confidence_per_expert) / np.sum(
+        np.exp(confidence_per_expert)
+    )
+
+    # print(confidence_per_expert)
+    # print(softmax_outputs_per_expert)
+    interaction_type_confidence = {0: "R", 1: "U", 2: "AS"}[
+        np.argmax(confidence_per_expert)
+    ]
+    interaction_type_model = {0: "R", 1: "U", 2: "AS"}[np.argmax(weights)]
+    # print(
+    #     f"confidence_predicted_interaction: {interaction_type_confidence}, model_predicted_interaction: {interaction_type_model} real_interaction: {interaction_type}"
+    # )
+
+    # weight the softmax probabilities by the confidence
+    weighted_softmaxed_probs = softmaxed_confidence_per_expert @ np.array(
+        [np.exp(logits[name]) / np.sum(np.exp(logits[name])) for name in logits]
+    )
+
+    # weight logits by confidence and then apply softmax
+    # weighted_logits = softmaxed_confidence_per_expert @ np.array(
+    #     [logits[name] for name in logits]
+    # )
+    # weighted_softmaxed_probs = np.exp(weighted_logits) / np.sum(
+    #     np.exp(weighted_logits)
+    # )
+    return np.argmax(weighted_softmaxed_probs)
+
+
 def cascaded_fusion(logits, threshold, *args):
     softmaxed_probs = {
         name: np.exp(logit) / np.sum(np.exp(logit)) for name, logit in logits.items()
@@ -201,6 +247,55 @@ def get_oracle_prediction(dataset_name, logits):
     return calculate_metrics(gths, preds)
 
 
+def get_prediction_analysis(dataset_name, results, fusion_strategy, *args):
+    fusion_type_dict = {}
+    for interaction_type in ["AS", "R", "U"]:
+        with open(
+            f"../{dataset_name}_data/data_split_output/{dataset_name}_{interaction_type}_dataset_test_cogvlm2_qwen2.json",
+            "r",
+        ) as f:
+            dataset = json.load(f)
+        for image_id in dataset:
+            fusion_type_dict[image_id] = interaction_type
+
+    gths, preds, meta = [], [], []
+    for data_id, data in results.items():
+        interaction_type = fusion_type_dict[data_id]
+        predicted_label = fusion_strategy(
+            data["logits"],
+            data["weights"],
+            data["target"],
+            interaction_type,
+            *args,
+        )
+
+        # computing the confidence as the difference between softmax probabilities
+        softmax_outputs_per_expert = np.array(
+            [
+                np.exp(data["logits"][name]) / np.sum(np.exp(data["logits"][name]))
+                for name in data["logits"]
+            ]
+        )
+        confidence_per_expert = softmax_outputs_per_expert.max(
+            axis=1
+        ) - softmax_outputs_per_expert.min(axis=1)
+
+        softmaxed_confidence_per_expert = np.exp(confidence_per_expert) / np.sum(
+            np.exp(confidence_per_expert)
+        )
+
+        gths.append(data["target"])
+        preds.append(predicted_label)
+        meta.append(
+            {
+                "real_interaction_type": {"R": 0, "U": 1, "AS": 2}[interaction_type],
+                "softmaxed_confidence_per_expert": softmaxed_confidence_per_expert.tolist(),
+                "weight_per_expert": list(data["weights"].values()),
+            }
+        )
+    return calculate_metrics(gths, preds), meta
+
+
 def main():
     dataset_name = "urfunny"
     model_name = "qwen-0.5b"
@@ -226,10 +321,10 @@ def main():
         dataset = json.load(f)
     U_test_data_ids = list(dataset.keys())
 
-    # file_dir = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}"
-    file_dir = f"../{dataset_name}_data/new_expert_inference_output/expert_{model_name}"
-    # weights_file = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}/{dataset_name}_rus_logits.jsonl"
-    weights_file = "./urfunny_blip2_fuser_focal_loss/test_rus_logits.jsonl"
+    file_dir = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}"
+    # file_dir = f"../{dataset_name}_data/new_expert_inference_output/expert_{model_name}"
+    weights_file = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}/{dataset_name}_rus_logits.jsonl"
+    # weights_file = "./urfunny_blip2_fuser_focal_loss/test_rus_logits.jsonl"
     subset_names = ["R", "U", "AS"]
 
     weights = load_weights(weights_file) if os.path.exists(weights_file) else None
@@ -239,19 +334,37 @@ def main():
     results_log = {}
 
     results_log["Baseline Interaction Type Accuracy"] = (
-        get_predictions(baseline_results, lambda x, y: np.argmax(x["baseline"])),
+        get_predictions(baseline_results, lambda x, _, __: np.argmax(x["baseline"])),
     )
+    results_log["[test] confidence average"], meta_interaction_confidence = (
+        get_prediction_analysis(dataset_name, results, test_confidence_average)
+    )
+
+    # calulcate interaction stats:
+    confidence_confusion_matrix = np.zeros((3, 3))
+    weights_confusion_matrix = np.zeros((3, 3))
+    for meta in meta_interaction_confidence:
+        real_interaction = meta["real_interaction_type"]
+        confidence = np.argmax(meta["softmaxed_confidence_per_expert"])
+        weight = np.argmax(meta["weight_per_expert"])
+        confidence_confusion_matrix[real_interaction, confidence] += 1
+        weights_confusion_matrix[real_interaction, weight] += 1
+
+    print("confidence_confusion_matrix")
+    print(confidence_confusion_matrix)
+    print("weights_confusion_matrix")
+    print(weights_confusion_matrix)
 
     if weights:
         results_log["RUS Fusion"] = get_predictions(
             results, weighted_softmax_rus_fusion
         )
-    #     results_log["RUS Fusion t=1e-1"] = get_predictions(
-    #         results, lambda x, y: weighted_softmax_temperature_rus_fusion(x, y, 1e-1)
-    #     )
-    #     # results_log["RUS Fusion t=100"] = get_predictions(
-    #     #     results, lambda x, y: weighted_softmax_temperature_rus_fusion(x, y, 100)
-    #     # )
+        results_log["RUS Fusion t=1e-1"] = get_predictions(
+            results, lambda x, y, _: weighted_softmax_temperature_rus_fusion(x, y, 1e-1)
+        )
+        # results_log["RUS Fusion t=100"] = get_predictions(
+        #     results, lambda x, y: weighted_softmax_temperature_rus_fusion(x, y, 100)
+        # )
 
     # tmp_res = {}
     # temps_exponents = list(range(1, 21))
@@ -299,19 +412,19 @@ def main():
         ] = (
             get_predictions(
                 subpart_results[interaction_type],
-                lambda x, y: np.argmax(x[interaction_type]),
+                lambda x, _, __: np.argmax(x[interaction_type]),
             ),
         )
 
         results_log[f"Baseline results on the {interaction_type} test set"] = (
             get_predictions(
                 subpart_baseline_results[interaction_type],
-                lambda x, y: np.argmax(x["baseline"]),
+                lambda x, _, __: np.argmax(x["baseline"]),
             ),
         )
 
         results_log[f"{interaction_type} expert results on the whole test set"] = (
-            get_predictions(results, lambda x, y: np.argmax(x[interaction_type]))
+            get_predictions(results, lambda x, _, __: np.argmax(x[interaction_type]))
         )
 
     # Prepare table rows; extract metrics even if they are wrapped in a tuple.
