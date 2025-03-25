@@ -409,6 +409,8 @@ def main():
 
         bin_ids = []
         bin_accs = []
+        bin_confs = []
+        running_ece = 0
         for bin_id in range(10):
             bin_data_idx = bin_idx == bin_id
 
@@ -423,10 +425,18 @@ def main():
                 analysis_confidence[:, expert_id][bin_data_idx]
             )
             bin_accs.append(bin_acc)
+            bin_confs.append(bin_conf)
             bin_ids.append(bin_id)
+            running_ece += (
+                abs(bin_acc - bin_conf)
+                * len(analysis_targets[bin_data_idx])
+                / len(analysis_targets)
+            )
             print(
                 f"bin_id: {bin_id}, bin_acc: {bin_acc}, perfect_acc: {bin_id / 10 +0.05 :.2f}, bin_conf:{bin_conf}, perfect_conf:{bin_id / 10 +0.05 :.2f}"
             )
+
+        print(f"Expected Calibration Error (ECE): {running_ece}")
 
         # overall accuracy
         overall_acc = np.sum(analysis_labels[:, expert_id] == analysis_targets) / len(
@@ -437,7 +447,15 @@ def main():
         plt.hist(
             analysis_confidence[:, expert_id],
             bins=[x / 10 for x in range(5, 11)],
+            zorder=2,
+            edgecolor="darkblue",
         )
+        plt.grid(alpha=0.6, zorder=1)
+        plt.xticks(ticks=[x / 10 for x in range(5, 11)])
+        plt.xlim(0.5, 1)
+        plt.xlabel("Confidence")
+        plt.ylabel("Count")
+        plt.title(f"Confidence Histogram for {expert_name}")
         plt.savefig(f"confidence_histogram_{expert_name}.png")
         plt.clf()
 
