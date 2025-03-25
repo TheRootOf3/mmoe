@@ -1,12 +1,15 @@
 import json
 import os
 from collections import defaultdict
+import time
 
 import jsonlines
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 import tabulate
 from matplotlib import pyplot as plt
+
+INTERACTION_TYPE_DICT = {"R": 0, "U": 1, "AS": 2}
 
 
 def _positive_sigmoid(x):
@@ -191,10 +194,12 @@ def test_confidence_average(logits, weights, target, interaction_type, *args):
 
     # print(confidence_per_expert)
     # print(softmax_outputs_per_expert)
-    interaction_type_confidence = {0: "R", 1: "U", 2: "AS"}[
+    interaction_type_confidence = {v: k for k, v in INTERACTION_TYPE_DICT.items()}[
         np.argmax(confidence_per_expert)
     ]
-    interaction_type_model = {0: "R", 1: "U", 2: "AS"}[np.argmax(weights)]
+    interaction_type_model = {v: k for k, v in INTERACTION_TYPE_DICT.items()}[
+        np.argmax(weights)
+    ]
     # print(
     #     f"confidence_predicted_interaction: {interaction_type_confidence}, model_predicted_interaction: {interaction_type_model} real_interaction: {interaction_type}"
     # )
@@ -229,7 +234,7 @@ def cascaded_fusion(logits, threshold, *args):
 
 def get_oracle_prediction(dataset_name, logits):
     fusion_type_dict = {}
-    for interaction_type in ["AS", "R", "U"]:
+    for interaction_type in INTERACTION_TYPE_DICT.keys():
         with open(
             f"../{dataset_name}_data/data_split_output/{dataset_name}_{interaction_type}_dataset_test_cogvlm2_qwen2.json",
             "r",
@@ -249,7 +254,7 @@ def get_oracle_prediction(dataset_name, logits):
 
 def get_prediction_analysis(dataset_name, results, fusion_strategy, *args):
     fusion_type_dict = {}
-    for interaction_type in ["AS", "R", "U"]:
+    for interaction_type in INTERACTION_TYPE_DICT.keys():
         with open(
             f"../{dataset_name}_data/data_split_output/{dataset_name}_{interaction_type}_dataset_test_cogvlm2_qwen2.json",
             "r",
@@ -273,7 +278,7 @@ def get_prediction_analysis(dataset_name, results, fusion_strategy, *args):
         softmax_outputs_per_expert = np.array(
             [
                 np.exp(data["logits"][name]) / np.sum(np.exp(data["logits"][name]))
-                for name in data["logits"]
+                for name in INTERACTION_TYPE_DICT.keys()
             ]
         )
         confidence_per_expert = softmax_outputs_per_expert.max(
@@ -288,7 +293,7 @@ def get_prediction_analysis(dataset_name, results, fusion_strategy, *args):
         preds.append(predicted_label)
         meta.append(
             {
-                "real_interaction_type": {"R": 0, "U": 1, "AS": 2}[interaction_type],
+                "real_interaction_type": INTERACTION_TYPE_DICT[interaction_type],
                 "softmaxed_confidence_per_expert": softmaxed_confidence_per_expert.tolist(),
                 "weight_per_expert": list(data["weights"].values()),
             }
@@ -296,8 +301,50 @@ def get_prediction_analysis(dataset_name, results, fusion_strategy, *args):
     return calculate_metrics(gths, preds), meta
 
 
+def analyse_confidence(dataset_name, results):
+    fusion_type_dict = {}
+    for interaction_type in INTERACTION_TYPE_DICT.keys():
+        with open(
+            f"../{dataset_name}_data/data_split_output/{dataset_name}_{interaction_type}_dataset_test_cogvlm2_qwen2.json",
+            "r",
+        ) as f:
+            dataset = json.load(f)
+        for image_id in dataset:
+            fusion_type_dict[image_id] = interaction_type
+
+    labels, confidence, targets, interaction_types = [], [], [], []
+    for data_id, data in results.items():
+        interaction_type = INTERACTION_TYPE_DICT[fusion_type_dict[data_id]]
+
+        logits_R = data["logits"]["R"]
+        logits_U = data["logits"]["U"]
+        logits_AS = data["logits"]["AS"]
+
+        predicted_label_R = np.argmax(logits_R)
+        predicted_label_U = np.argmax(logits_U)
+        predicted_label_AS = np.argmax(logits_AS)
+
+        confidence_R = np.exp(logits_R[predicted_label_R]) / np.sum(np.exp(logits_R))
+        confidence_U = np.exp(logits_U[predicted_label_U]) / np.sum(np.exp(logits_U))
+        confidence_AS = np.exp(logits_AS[predicted_label_AS]) / np.sum(
+            np.exp(logits_AS)
+        )
+
+        labels.append([predicted_label_R, predicted_label_U, predicted_label_AS])
+        confidence.append([confidence_R, confidence_U, confidence_AS])
+        targets.append(data["target"])
+        interaction_types.append(interaction_type)
+
+    return (
+        np.array(labels),
+        np.array(confidence),
+        np.array(targets),
+        np.array(interaction_types),
+    )
+
+
 def main():
-    dataset_name = "urfunny"
+    dataset_name = "mmsd"
     model_name = "qwen-0.5b"
 
     with open(
@@ -325,7 +372,9 @@ def main():
     # file_dir = f"../{dataset_name}_data/new_expert_inference_output/expert_{model_name}"
     weights_file = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}/{dataset_name}_rus_logits.jsonl"
     # weights_file = "./urfunny_blip2_fuser_focal_loss/test_rus_logits.jsonl"
-    subset_names = ["R", "U", "AS"]
+    # weights_file = "./mmsd_blip2_fuser/test_rus_logits.jsonl"
+    # weights_file = "./mustard_blip2_fuser/test_rus_logits.jsonl"
+    subset_names = INTERACTION_TYPE_DICT.keys()
 
     weights = load_weights(weights_file) if os.path.exists(weights_file) else None
     results = load_and_transform_data(dataset_name, file_dir, subset_names, weights)
@@ -340,20 +389,105 @@ def main():
         get_prediction_analysis(dataset_name, results, test_confidence_average)
     )
 
-    # calulcate interaction stats:
-    confidence_confusion_matrix = np.zeros((3, 3))
-    weights_confusion_matrix = np.zeros((3, 3))
-    for meta in meta_interaction_confidence:
-        real_interaction = meta["real_interaction_type"]
-        confidence = np.argmax(meta["softmaxed_confidence_per_expert"])
-        weight = np.argmax(meta["weight_per_expert"])
-        confidence_confusion_matrix[real_interaction, confidence] += 1
-        weights_confusion_matrix[real_interaction, weight] += 1
+    (
+        analysis_labels,
+        analysis_confidence,
+        analysis_targets,
+        analysis_interaction_type,
+    ) = analyse_confidence(dataset_name, results)
 
-    print("confidence_confusion_matrix")
-    print(confidence_confusion_matrix)
-    print("weights_confusion_matrix")
-    print(weights_confusion_matrix)
+    for expert_name, expert_id in INTERACTION_TYPE_DICT.items():
+        print(f"Interaction type: {expert_name}")
+
+        bin_idx = (
+            np.digitize(
+                analysis_confidence[:, expert_id],
+                bins=[x / 10 for x in range(11)],
+            )
+            - 1  # digitize returns 1-indexed bins, account for it to count from 0
+        )
+
+        bin_ids = []
+        bin_accs = []
+        for bin_id in range(10):
+            bin_data_idx = bin_idx == bin_id
+
+            if np.sum(bin_data_idx) == 0:
+                continue
+
+            bin_acc = np.sum(
+                analysis_labels[:, expert_id][bin_data_idx]
+                == analysis_targets[bin_data_idx]
+            ) / len(analysis_targets[bin_data_idx])
+            bin_conf = np.sum(analysis_confidence[:, expert_id][bin_data_idx]) / len(
+                analysis_confidence[:, expert_id][bin_data_idx]
+            )
+            bin_accs.append(bin_acc)
+            bin_ids.append(bin_id)
+            print(
+                f"bin_id: {bin_id}, bin_acc: {bin_acc}, perfect_acc: {bin_id / 10 +0.05 :.2f}, bin_conf:{bin_conf}, perfect_conf:{bin_id / 10 +0.05 :.2f}"
+            )
+
+        # overall accuracy
+        overall_acc = np.sum(analysis_labels[:, expert_id] == analysis_targets) / len(
+            analysis_targets
+        )
+        print(f"overall_acc: {overall_acc}")
+
+        plt.hist(
+            analysis_confidence[:, expert_id],
+            bins=[x / 10 for x in range(5, 11)],
+        )
+        plt.savefig(f"confidence_histogram_{expert_name}.png")
+        plt.clf()
+
+        plt.bar(
+            [x / 10 + 0.05 for x in bin_ids],
+            bin_accs,
+            width=0.1,
+            align="center",
+            alpha=0.7,
+            zorder=3,
+            color="blue",
+            edgecolor="darkblue",
+            label="actual accuracy",
+        )
+        plt.bar(
+            [x / 10 + 0.05 for x in bin_ids],
+            [x / 10 + 0.05 for x in bin_ids],
+            width=0.1,
+            align="center",
+            alpha=0.3,
+            color="red",
+            zorder=2,
+            edgecolor="darkred",
+            label="perfect calibration",
+        )
+        plt.legend()
+        plt.grid(alpha=0.6, zorder=1)
+        plt.xticks(ticks=[x / 10 for x in range(5, 11)])
+        plt.xlim(0.5, 1)
+        plt.ylim(0, 1)
+        plt.xlabel("Confidence")
+        plt.ylabel("Accuracy")
+        plt.title(f"Reliability Diagram\nAccuracy vs Confidence for {expert_name}")
+        plt.savefig(f"reliability_diagram_{expert_name}.png")
+        plt.clf()
+
+    # calulcate interaction stats:
+    # confidence_confusion_matrix = np.zeros((3, 3))
+    # weights_confusion_matrix = np.zeros((3, 3))
+    # for meta in meta_interaction_confidence:
+    #     real_interaction = meta["real_interaction_type"]
+    #     confidence = np.argmax(meta["softmaxed_confidence_per_expert"])
+    #     weight = np.argmax(meta["weight_per_expert"])
+    #     confidence_confusion_matrix[real_interaction, confidence] += 1
+    #     weights_confusion_matrix[real_interaction, weight] += 1
+
+    # print("confidence_confusion_matrix")
+    # print(confidence_confusion_matrix)
+    # print("weights_confusion_matrix")
+    # print(weights_confusion_matrix)
 
     if weights:
         results_log["RUS Fusion"] = get_predictions(
