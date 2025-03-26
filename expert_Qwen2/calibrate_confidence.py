@@ -324,15 +324,15 @@ if __name__ == "__main__":
         model = AutoModelForCausalLM.from_pretrained(
             args.load_model_name, cache_dir="./.cache"
         ).to(device)
-        config = LoraConfig(
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            bias="none",
-            target_modules=["q_proj", "k_proj"],
-        )
-        model = get_peft_model(model, config)
-        model.print_trainable_parameters()
+        # config = LoraConfig(
+        #     r=args.lora_r,
+        #     lora_alpha=args.lora_alpha,
+        #     lora_dropout=args.lora_dropout,
+        #     bias="none",
+        #     target_modules=["q_proj", "k_proj"],
+        # )
+        # model = get_peft_model(model, config)
+        # model.print_trainable_parameters()
         model.to(device)
 
         scaled_model = ModelWithTemperature(model)
