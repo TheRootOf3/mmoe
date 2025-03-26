@@ -5,7 +5,7 @@
 #SBATCH --partition=priority
 #SBATCH --job-name=multimodal-qwen2
 
-SEED=2137
+SEED=42
 
 poetry run python train.py \
 --mode test \

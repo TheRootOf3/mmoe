@@ -18,8 +18,12 @@ def load_and_transform_data(dataset_name, file_dir, subset_names, weights=None):
     results = defaultdict(
         lambda: {"logits": defaultdict(list), "target": None, "weights": {}}
     )
+    calibration_dict = {}
     for name in subset_names:
         file_path = os.path.join(file_dir, f"{dataset_name}_{name}_logits.jsonl")
+        calibration_file_path = os.path.join(
+            file_dir, f"{dataset_name}_{name}_calibration.json"
+        )
         with jsonlines.open(file_path, "r") as f:
             for line in f:
                 data_id = line["image_id"]
@@ -32,10 +36,14 @@ def load_and_transform_data(dataset_name, file_dir, subset_names, weights=None):
                 ), "Targets do not match across subsets for the same data."
                 if weights and data_id in weights:
                     results[data_id]["weights"][name] = weights[data_id][name]
-    return results
+
+        with open(calibration_file_path, "r") as f:
+            calibration_dict[name] = json.load(f)
+
+    return results, calibration_dict
 
 
-def analyse_confidence(dataset_name, results):
+def analyse_confidence(dataset_name, results, calibration_dict=None):
     fusion_type_dict = {}
     for interaction_type in INTERACTION_TYPE_DICT.keys():
         with open(
@@ -50,9 +58,24 @@ def analyse_confidence(dataset_name, results):
     for data_id, data in results.items():
         interaction_type = INTERACTION_TYPE_DICT[fusion_type_dict[data_id]]
 
-        logits_R = data["logits"]["R"]
-        logits_U = data["logits"]["U"]
-        logits_AS = data["logits"]["AS"]
+        # not to confuse: logits_R means logits of the R expert model on all samples, not only the samples that are of R interaction type
+        if calibration_dict is not None:
+            logits_R = [
+                x / calibration_dict["R"]["softmax_temperature"]
+                for x in data["logits"]["R"]
+            ]
+            logits_U = [
+                x / calibration_dict["U"]["softmax_temperature"]
+                for x in data["logits"]["U"]
+            ]
+            logits_AS = [
+                x / calibration_dict["AS"]["softmax_temperature"]
+                for x in data["logits"]["AS"]
+            ]
+        else:
+            logits_R = data["logits"]["R"]
+            logits_U = data["logits"]["U"]
+            logits_AS = data["logits"]["AS"]
 
         predicted_label_R = np.argmax(logits_R)
         predicted_label_U = np.argmax(logits_U)
@@ -78,8 +101,9 @@ def analyse_confidence(dataset_name, results):
 
 
 def main():
-    dataset_name = "mmsd"
+    dataset_name = "urfunny"
     model_name = "qwen-0.5b"
+    seed = 32
 
     with open(
         f"../{dataset_name}_data/data_split_output/{dataset_name}_AS_dataset_test_cogvlm2_qwen2.json",
@@ -102,23 +126,27 @@ def main():
         dataset = json.load(f)
     U_test_data_ids = list(dataset.keys())
 
-    file_dir = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}"
+    file_dir = f"../{dataset_name}_data/expert_inference_output_32/expert_{model_name}"
     # file_dir = f"../{dataset_name}_data/new_expert_inference_output/expert_{model_name}"
-    weights_file = f"../{dataset_name}_data/expert_inference_output/expert_{model_name}/{dataset_name}_rus_logits.jsonl"
+    weights_file = f"../{dataset_name}_data/expert_inference_output_32/expert_{model_name}/{dataset_name}_rus_logits.jsonl"
     # weights_file = "./urfunny_blip2_fuser_focal_loss/test_rus_logits.jsonl"
     # weights_file = "./mmsd_blip2_fuser/test_rus_logits.jsonl"
     # weights_file = "./mustard_blip2_fuser/test_rus_logits.jsonl"
     subset_names = INTERACTION_TYPE_DICT.keys()
 
     weights = load_weights(weights_file) if os.path.exists(weights_file) else None
-    results = load_and_transform_data(dataset_name, file_dir, subset_names, weights)
+    results, calibration_dict = load_and_transform_data(
+        dataset_name, file_dir, subset_names, weights
+    )
+
+    # calibration_dict = None
 
     (
         analysis_labels,
         analysis_confidence,
         analysis_targets,
         analysis_interaction_type,
-    ) = analyse_confidence(dataset_name, results)
+    ) = analyse_confidence(dataset_name, results, calibration_dict)
 
     for expert_name, expert_id in INTERACTION_TYPE_DICT.items():
         print(f"Interaction type: {expert_name}")
@@ -157,16 +185,16 @@ def main():
                 / len(analysis_targets)
             )
             print(
-                f"bin_id: {bin_id}, bin_acc: {bin_acc}, perfect_acc: {bin_id / 10 +0.05 :.2f}, bin_conf:{bin_conf}, perfect_conf:{bin_id / 10 +0.05 :.2f}"
+                f"bin_id: {bin_id}, bin_acc: {bin_acc:.2f}, perfect_acc: {bin_id / 10 +0.05 :.2f}, bin_conf:{bin_conf:.2f}, perfect_conf:{bin_id / 10 +0.05 :.2f}"
             )
 
-        print(f"Expected Calibration Error (ECE): {running_ece}")
+        print(f"Expected Calibration Error (ECE): {running_ece:.2f}")
 
         # overall accuracy
         overall_acc = np.sum(analysis_labels[:, expert_id] == analysis_targets) / len(
             analysis_targets
         )
-        print(f"overall_acc: {overall_acc}")
+        print(f"overall_acc: {overall_acc:.2f}")
 
         plt.hist(
             analysis_confidence[:, expert_id],
@@ -180,7 +208,9 @@ def main():
         plt.xlabel("Confidence")
         plt.ylabel("Count")
         plt.title(f"Confidence Histogram for {expert_name}")
-        plt.savefig(f"confidence_histogram_{expert_name}.png")
+        plt.savefig(
+            f"confidence_histogram_{expert_name}{'_calibrated' if calibration_dict is not None else ''}.png"
+        )
         plt.clf()
 
         plt.bar(
@@ -213,14 +243,16 @@ def main():
         plt.xlabel("Confidence")
         plt.ylabel("Accuracy")
         plt.title(f"Reliability Diagram\nAccuracy vs Confidence for {expert_name}")
-        plt.savefig(f"reliability_diagram_{expert_name}.png")
+        plt.savefig(
+            f"reliability_diagram_{expert_name}{'_calibrated' if calibration_dict is not None else ''}.png"
+        )
         plt.clf()
 
     # what is the average confidence for each interaction type when the model is correct?
 
     numbers_to_plot = []
     for expert_name, expert_id in INTERACTION_TYPE_DICT.items():
-        for interaction_type_id in INTERACTION_TYPE_DICT.values():
+        for interaction_type_name, interaction_type_id in INTERACTION_TYPE_DICT.items():
             correct_idx = (analysis_labels[:, expert_id] == analysis_targets) & (
                 analysis_interaction_type == interaction_type_id
             )
@@ -233,7 +265,7 @@ def main():
             )
             numbers_to_plot.append((interaction_type_id, expert_id, avg_conf, acc))
             print(
-                f"Expert: {expert_name}, Interaction Type: {interaction_type_id}, Average Confidence: {avg_conf}, Average Accuracy: {acc}"
+                f"Expert: {expert_name}, Interaction Type: {interaction_type_name}, Average Confidence: {avg_conf:.2f}, Average Accuracy: {acc:.2f}"
             )
 
     numbers_to_plot = np.array(numbers_to_plot)
@@ -312,7 +344,9 @@ def main():
     plt.ylabel("Average Confidence")
     plt.title("Average Confidence for each Interaction Type when the Model is Correct")
     plt.legend()
-    plt.savefig("average_confidence_correct.png")
+    plt.savefig(
+        f"average_confidence_correct{'_calibrated' if calibration_dict is not None else ''}.png"
+    )
     plt.clf()
 
     # calulcate interaction stats:

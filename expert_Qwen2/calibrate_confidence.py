@@ -201,7 +201,7 @@ if __name__ == "__main__":
         "--batch_size", type=int, default=2, help="Batch size for training"
     )
     parser.add_argument(
-        "--val_batch_size", type=int, default=32, help="Batch size for validation"
+        "--val_batch_size", type=int, default=2, help="Batch size for validation"
     )
     parser.add_argument(
         "--test_batch_size", type=int, default=32, help="Batch size for testing"
@@ -338,54 +338,7 @@ if __name__ == "__main__":
         scaled_model = ModelWithTemperature(model)
         scaled_model.set_temperature(val_dataloader)
 
-        print("SAVING MODEL")
-        model.save_pretrained(args.save_path)
+        calibration_dict = {"softmax_temperature": scaled_model.temperature.data.item()}
 
-        if args.answer_options == 2:
-            acc, f1, precision, recall, yesno_logits = evaluate(
-                tokenizer, model, test_dataloader, device, args
-            )
-            print("Test Results:")
-            print(f"Test Accuracy: {acc:.4f}")
-            print(f"Test F1 Score: {f1:.4f}")
-            print(f"Test Precision: {precision:.4f}")
-            print(f"Test Recall: {recall:.4f}")
-            with open(f"./{args.save_path}/test_yesno_logits.json", "w") as f:
-                json.dump(yesno_logits, f)
-
-        else:
-            acc, yesno_logits = evaluate(
-                tokenizer, model, test_dataloader, device, args
-            )
-            print("Test Results:")
-            print(f"Test Accuracy: {acc:.4f}")
-    else:
-        print(f"TEST {args.load_model_name}")
-        model = AutoModelForCausalLM.from_pretrained(
-            args.load_model_name, cache_dir="./.cache"
-        ).to(device)
-        # model = PeftModel.from_pretrained(
-        #    model,
-        #    args.load_model_name,
-        #    is_trainable=True
-        # ).to(device)
-        if args.answer_options == 2:
-            acc, f1, precision, recall, yesno_logits = evaluate(
-                tokenizer, model, test_dataloader, device, args
-            )
-            print("Test Results:")
-            print(f"Test Accuracy: {acc:.4f}")
-            print(f"Test F1 Score: {f1:.4f}")
-            print(f"Test Precision: {precision:.4f}")
-            print(f"Test Recall: {recall:.4f}")
-            with open(f"./{args.load_model_name}/test_yesno_logits.json", "w") as f:
-                json.dump(yesno_logits, f)
-            print(acc, f1, precision, recall)
-        else:
-            acc, yesno_logits = evaluate(
-                tokenizer, model, test_dataloader, device, args
-            )
-            print("Test Results:")
-            print(f"Test Accuracy: {acc:.4f}")
-            with open(f"./{args.load_model_name}/test_yesno_logits.json", "w") as f:
-                json.dump(yesno_logits, f)
+        with open(f"./{args.save_path}/calibration.json", "w") as f:
+            json.dump(calibration_dict, f)

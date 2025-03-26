@@ -1,6 +1,7 @@
 import torch
 from torch import nn, optim
 from torch.nn import functional as F
+from tqdm import tqdm
 
 
 class ModelWithTemperature(nn.Module):
@@ -38,25 +39,28 @@ class ModelWithTemperature(nn.Module):
         We're going to set it to optimize NLL.
         valid_loader (DataLoader): validation set loader
         """
-        self.cuda()
-        nll_criterion = nn.CrossEntropyLoss().cuda()
-        ece_criterion = _ECELoss().cuda()
+        nll_criterion = nn.CrossEntropyLoss()
+        ece_criterion = _ECELoss()
 
         # First: collect all the logits and labels for the validation set
         logits_list = []
         labels_list = []
         with torch.no_grad():
-            for batch in valid_loader:
+            for batch in tqdm(
+                valid_loader,
+                desc="Collecting logits from the validation set",
+                leave=False,
+            ):
                 input_ids = batch["input_ids"].to(self.model.device)
                 attention_mask = batch["attention_mask"].to(self.model.device)
                 labels = batch["label"].to(self.model.device)
 
                 outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
                 logits = outputs.logits[:, -1, :]
-                logits_list.append(logits)
-                labels_list.append(labels)
-            logits = torch.cat(logits_list).cuda()
-            labels = torch.cat(labels_list).cuda()
+                logits_list.append(logits.cpu())
+                labels_list.append(labels.cpu())
+            logits = torch.cat(logits_list)
+            labels = torch.cat(labels_list)
 
         # Calculate NLL and ECE before temperature scaling
         before_temperature_nll = nll_criterion(logits, labels).item()
@@ -67,7 +71,7 @@ class ModelWithTemperature(nn.Module):
         )
 
         # Next: optimize the temperature w.r.t. NLL
-        optimizer = optim.LBFGS([self.temperature], lr=0.01, max_iter=50)
+        optimizer = optim.LBFGS([self.temperature], lr=0.01, max_iter=1000)
 
         def eval():
             optimizer.zero_grad()
