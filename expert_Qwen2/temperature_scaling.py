@@ -46,11 +46,15 @@ class ModelWithTemperature(nn.Module):
         logits_list = []
         labels_list = []
         with torch.no_grad():
-            for input, label in valid_loader:
-                input = input.cuda()
-                logits = self.model(input)
+            for batch in valid_loader:
+                input_ids = batch["input_ids"].to(self.model.device)
+                attention_mask = batch["attention_mask"].to(self.model.device)
+                labels = batch["label"].to(self.model.device)
+
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                logits = outputs.logits[:, -1, :]
                 logits_list.append(logits)
-                labels_list.append(label)
+                labels_list.append(labels)
             logits = torch.cat(logits_list).cuda()
             labels = torch.cat(labels_list).cuda()
 
