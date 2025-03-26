@@ -3,7 +3,7 @@ import os
 
 import jsonlines
 
-dataset_name = "urfunny"
+dataset_name = "mustard"
 model_size = "0.5"
 model_seed = "32"
 
@@ -14,10 +14,10 @@ inference_results = [
     f"{dataset_name}_U_logits.jsonl",
 ]
 model_directories = [
-    f"{model_size}_qwen_{dataset_name}_baseline_model",
-    f"{model_size}_qwen_{dataset_name}_AS_model",
-    f"{model_size}_qwen_{dataset_name}_R_model",
-    f"{model_size}_qwen_{dataset_name}_U_model",
+    f"{model_size}_qwen_{dataset_name}_baseline_model_{model_seed}",
+    f"{model_size}_qwen_{dataset_name}_AS_model_{model_seed}",
+    f"{model_size}_qwen_{dataset_name}_R_model_{model_seed}",
+    f"{model_size}_qwen_{dataset_name}_U_model_{model_seed}",
 ]
 
 
@@ -44,14 +44,14 @@ for inference_result, model_directory in zip(inference_results, model_directorie
 
     # create expert_inference_output expert_blip2 directory if it does not exist
     if not os.path.exists(
-        f"../{dataset_name}_data/new_expert_inference_output/expert_qwen-{model_size}b"
+        f"../{dataset_name}_data/expert_inference_output_{model_seed}/expert_qwen-{model_size}b"
     ):
         os.makedirs(
-            f"../{dataset_name}_data/new_expert_inference_output/expert_qwen-{model_size}b"
+            f"../{dataset_name}_data/expert_inference_output_{model_seed}/expert_qwen-{model_size}b"
         )
 
     with jsonlines.open(
-        f"../{dataset_name}_data/new_expert_inference_output/expert_qwen-{model_size}b/{inference_result}",
+        f"../{dataset_name}_data/expert_inference_output_{model_seed}/expert_qwen-{model_size}b/{inference_result}",
         "w",
     ) as f:
         f.write_all(overall_dataset)
