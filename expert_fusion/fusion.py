@@ -492,6 +492,105 @@ def main():
         plt.savefig(f"reliability_diagram_{expert_name}.png")
         plt.clf()
 
+    # what is the average confidence for each interaction type when the model is correct?
+
+    numbers_to_plot = []
+    for expert_name, expert_id in INTERACTION_TYPE_DICT.items():
+        for interaction_type_id in INTERACTION_TYPE_DICT.values():
+            correct_idx = (analysis_labels[:, expert_id] == analysis_targets) & (
+                analysis_interaction_type == interaction_type_id
+            )
+            avg_conf = np.mean(analysis_confidence[:, expert_id][correct_idx])
+            acc = np.mean(
+                analysis_labels[:, expert_id][
+                    analysis_interaction_type == interaction_type_id
+                ]
+                == analysis_targets[analysis_interaction_type == interaction_type_id]
+            )
+            numbers_to_plot.append((interaction_type_id, expert_id, avg_conf, acc))
+            print(
+                f"Expert: {expert_name}, Interaction Type: {interaction_type_id}, Average Confidence: {avg_conf}, Average Accuracy: {acc}"
+            )
+
+    numbers_to_plot = np.array(numbers_to_plot)
+    plt.bar(
+        [x - 0.1 for x in range(3)],
+        numbers_to_plot[numbers_to_plot[:, 1] == 0, 2],
+        width=0.1,
+        color="blue",
+        edgecolor="darkblue",
+        alpha=0.7,
+        label="expert R",
+        zorder=2,
+    )
+    plt.bar(
+        range(3),
+        numbers_to_plot[numbers_to_plot[:, 1] == 1, 2],
+        width=0.1,
+        color="red",
+        edgecolor="darkred",
+        alpha=0.7,
+        label="expert U",
+        zorder=2,
+    )
+    plt.bar(
+        [x + 0.1 for x in range(3)],
+        numbers_to_plot[numbers_to_plot[:, 1] == 2, 2],
+        width=0.1,
+        color="green",
+        edgecolor="darkgreen",
+        alpha=0.7,
+        label="expert AS",
+        zorder=2,
+    )
+
+    plt.scatter(
+        [x - 0.1 for x in range(3)],
+        numbers_to_plot[numbers_to_plot[:, 1] == 0, 3],
+        # width=0.1,
+        color="black",
+        marker="_",
+        s=100,
+        # edgecolor="darkblue",
+        alpha=0.7,
+        # label="expert R",
+        zorder=2,
+    )
+    plt.scatter(
+        range(3),
+        numbers_to_plot[numbers_to_plot[:, 1] == 1, 3],
+        # width=0.1,
+        color="black",
+        marker="_",
+        s=100,
+        # edgecolor="darkred",
+        alpha=0.7,
+        # label="expert U",
+        zorder=3,
+    )
+    plt.scatter(
+        [x + 0.1 for x in range(3)],
+        numbers_to_plot[numbers_to_plot[:, 1] == 2, 3],
+        # width=0.1,
+        color="black",
+        marker="_",
+        s=100,
+        # edgecolor="darkgreen",
+        alpha=0.7,
+        # label="expert AS",
+        zorder=2,
+    )
+
+    plt.grid(alpha=0.6, zorder=1)
+    plt.xticks(ticks=[0, 1, 2], labels=["Redundancy", "Uniqueness", "Synthesis"])
+    plt.ylim(0, 1.2)
+    plt.xlabel("Interaction Type")
+    plt.ylabel("Average Confidence")
+    plt.title("Average Confidence for each Interaction Type when the Model is Correct")
+    plt.legend()
+    plt.savefig("average_confidence_correct.png")
+    plt.clf()
+
     # calulcate interaction stats:
     # confidence_confusion_matrix = np.zeros((3, 3))
     # weights_confusion_matrix = np.zeros((3, 3))
